@@ -90,6 +90,11 @@ func resourceAwsInstance() *schema.Resource {
 				Type:     schema.TypeBool,
 				Optional: true,
 				Default:  true,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					// Suppress diff if network_interface is set
+					_, ok := d.GetOk("network_interface")
+					return ok
+				},
 			},
 
 			"user_data": {
@@ -212,6 +217,7 @@ func resourceAwsInstance() *schema.Resource {
 				Type:     schema.TypeInt,
 				Optional: true,
 				ForceNew: true,
+				Computed: true,
 			},
 
 			"ipv6_addresses": {
@@ -222,7 +228,6 @@ func resourceAwsInstance() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
-				ConflictsWith: []string{"ipv6_address_count"},
 			},
 
 			"tenancy": {
@@ -234,7 +239,7 @@ func resourceAwsInstance() *schema.Resource {
 
 			"tags": tagsSchema(),
 
-			"volume_tags": tagsSchema(),
+			"volume_tags": tagsSchemaComputed(),
 
 			"block_device": {
 				Type:     schema.TypeMap,
@@ -415,13 +420,20 @@ func resourceAwsInstanceCreate(d *schema.ResourceData, meta interface{}) error {
 		UserData:                          instanceOpts.UserData64,
 	}
 
-	if v, ok := d.GetOk("ipv6_address_count"); ok {
-		runOpts.Ipv6AddressCount = aws.Int64(int64(v.(int)))
+	ipv6Count, ipv6CountOk := d.GetOk("ipv6_address_count")
+	ipv6Address, ipv6AddressOk := d.GetOk("ipv6_addresses")
+
+	if ipv6AddressOk && ipv6CountOk {
+		return fmt.Errorf("Only 1 of `ipv6_address_count` or `ipv6_addresses` can be specified")
 	}
 
-	if v, ok := d.GetOk("ipv6_addresses"); ok {
-		ipv6Addresses := make([]*ec2.InstanceIpv6Address, len(v.([]interface{})))
-		for _, address := range v.([]interface{}) {
+	if ipv6CountOk {
+		runOpts.Ipv6AddressCount = aws.Int64(int64(ipv6Count.(int)))
+	}
+
+	if ipv6AddressOk {
+		ipv6Addresses := make([]*ec2.InstanceIpv6Address, len(ipv6Address.([]interface{})))
+		for _, address := range ipv6Address.([]interface{}) {
 			ipv6Address := &ec2.InstanceIpv6Address{
 				Ipv6Address: aws.String(address.(string)),
 			}
@@ -432,32 +444,35 @@ func resourceAwsInstanceCreate(d *schema.ResourceData, meta interface{}) error {
 		runOpts.Ipv6Addresses = ipv6Addresses
 	}
 
-	tagsSpec := make([]*ec2.TagSpecification, 0)
+	restricted := meta.(*AWSClient).IsGovCloud() || meta.(*AWSClient).IsChinaCloud()
+	if !restricted {
+		tagsSpec := make([]*ec2.TagSpecification, 0)
 
-	if v, ok := d.GetOk("tags"); ok {
-		tags := tagsFromMap(v.(map[string]interface{}))
+		if v, ok := d.GetOk("tags"); ok {
+			tags := tagsFromMap(v.(map[string]interface{}))
 
-		spec := &ec2.TagSpecification{
-			ResourceType: aws.String("instance"),
-			Tags:         tags,
+			spec := &ec2.TagSpecification{
+				ResourceType: aws.String("instance"),
+				Tags:         tags,
+			}
+
+			tagsSpec = append(tagsSpec, spec)
 		}
 
-		tagsSpec = append(tagsSpec, spec)
-	}
+		if v, ok := d.GetOk("volume_tags"); ok {
+			tags := tagsFromMap(v.(map[string]interface{}))
 
-	if v, ok := d.GetOk("volume_tags"); ok {
-		tags := tagsFromMap(v.(map[string]interface{}))
+			spec := &ec2.TagSpecification{
+				ResourceType: aws.String("volume"),
+				Tags:         tags,
+			}
 
-		spec := &ec2.TagSpecification{
-			ResourceType: aws.String("volume"),
-			Tags:         tags,
+			tagsSpec = append(tagsSpec, spec)
 		}
 
-		tagsSpec = append(tagsSpec, spec)
-	}
-
-	if len(tagsSpec) > 0 {
-		runOpts.TagSpecifications = tagsSpec
+		if len(tagsSpec) > 0 {
+			runOpts.TagSpecifications = tagsSpec
+		}
 	}
 
 	// Create the instance
@@ -639,6 +654,7 @@ func resourceAwsInstanceRead(d *schema.ResourceData, meta interface{}) error {
 		d.Set("primary_network_interface_id", primaryNetworkInterface.NetworkInterfaceId)
 		d.Set("associate_public_ip_address", primaryNetworkInterface.Association != nil)
 		d.Set("ipv6_address_count", len(primaryNetworkInterface.Ipv6Addresses))
+		d.Set("source_dest_check", *primaryNetworkInterface.SourceDestCheck)
 
 		for _, address := range primaryNetworkInterface.Ipv6Addresses {
 			ipv6Addresses = append(ipv6Addresses, *address.Ipv6Address)
@@ -713,19 +729,24 @@ func resourceAwsInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	d.Partial(true)
 
-	if d.HasChange("tags") && !d.IsNewResource() {
-		if err := setTags(conn, d); err != nil {
-			return err
-		} else {
-			d.SetPartial("tags")
+	restricted := meta.(*AWSClient).IsGovCloud() || meta.(*AWSClient).IsChinaCloud()
+
+	if d.HasChange("tags") {
+		if !d.IsNewResource() || !restricted {
+			if err := setTags(conn, d); err != nil {
+				return err
+			} else {
+				d.SetPartial("tags")
+			}
 		}
 	}
-
-	if d.HasChange("volume_tags") && !d.IsNewResource() {
-		if err := setVolumeTags(conn, d); err != nil {
-			return err
-		} else {
-			d.SetPartial("volume_tags")
+	if d.HasChange("volume_tags") {
+		if !d.IsNewResource() || !restricted {
+			if err := setVolumeTags(conn, d); err != nil {
+				return err
+			} else {
+				d.SetPartial("volume_tags")
+			}
 		}
 	}
 
@@ -822,11 +843,37 @@ func resourceAwsInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 				groups = append(groups, aws.String(v.(string)))
 			}
 		}
-		_, err := conn.ModifyInstanceAttribute(&ec2.ModifyInstanceAttributeInput{
-			InstanceId: aws.String(d.Id()),
-			Groups:     groups,
+		// If a user has multiple network interface attachments on the target EC2 instance, simply modifying the
+		// instance attributes via a `ModifyInstanceAttributes()` request would fail with the following error message:
+		// "There are multiple interfaces attached to instance 'i-XX'. Please specify an interface ID for the operation instead."
+		// Thus, we need to actually modify the primary network interface for the new security groups, as the primary
+		// network interface is where we modify/create security group assignments during Create.
+		log.Printf("[INFO] Modifying `vpc_security_group_ids` on Instance %q", d.Id())
+		instances, err := conn.DescribeInstances(&ec2.DescribeInstancesInput{
+			InstanceIds: []*string{aws.String(d.Id())},
 		})
 		if err != nil {
+			return err
+		}
+		instance := instances.Reservations[0].Instances[0]
+		var primaryInterface ec2.InstanceNetworkInterface
+		for _, ni := range instance.NetworkInterfaces {
+			if *ni.Attachment.DeviceIndex == 0 {
+				primaryInterface = *ni
+			}
+		}
+
+		if primaryInterface.NetworkInterfaceId == nil {
+			log.Print("[Error] Attempted to set vpc_security_group_ids on an instance without a primary network interface")
+			return fmt.Errorf(
+				"Failed to update vpc_security_group_ids on %q, which does not contain a primary network interface",
+				d.Id())
+		}
+
+		if _, err := conn.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
+			NetworkInterfaceId: primaryInterface.NetworkInterfaceId,
+			Groups:             groups,
+		}); err != nil {
 			return err
 		}
 	}
