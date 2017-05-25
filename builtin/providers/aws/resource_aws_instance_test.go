@@ -860,6 +860,8 @@ func TestAccAWSInstance_keyPairCheck(t *testing.T) {
 		}
 	}
 
+	keyPairName := fmt.Sprintf("tf-acc-test-%s", acctest.RandString(5))
+
 	resource.Test(t, resource.TestCase{
 		PreCheck:        func() { testAccPreCheck(t) },
 		IDRefreshName:   "aws_instance.foo",
@@ -868,10 +870,10 @@ func TestAccAWSInstance_keyPairCheck(t *testing.T) {
 		CheckDestroy:    testAccCheckInstanceDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccInstanceConfigKeyPair,
+				Config: testAccInstanceConfigKeyPair(keyPairName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckInstanceExists("aws_instance.foo", &v),
-					testCheckKeyPair("tmp-key"),
+					testCheckKeyPair(keyPairName),
 				),
 			},
 		},
@@ -1322,6 +1324,9 @@ resource "aws_instance" "foo" {
 const testAccInstanceConfigSourceDestEnable = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigSourceDestEnable"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1340,6 +1345,9 @@ resource "aws_instance" "foo" {
 const testAccInstanceConfigSourceDestDisable = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigSourceDestDisable"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1360,6 +1368,9 @@ func testAccInstanceConfigDisableAPITermination(val bool) string {
 	return fmt.Sprintf(`
 	resource "aws_vpc" "foo" {
 		cidr_block = "10.1.0.0/16"
+		tags {
+			Name = "testAccInstanceConfigDisableAPITermination"
+		}
 	}
 
 	resource "aws_subnet" "foo" {
@@ -1380,6 +1391,9 @@ func testAccInstanceConfigDisableAPITermination(val bool) string {
 const testAccInstanceConfigVPC = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigVPC"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1727,6 +1741,9 @@ resource "aws_instance" "foo" {
 const testAccInstanceConfigPrivateIP = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigPrivateIP"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1745,6 +1762,9 @@ resource "aws_instance" "foo" {
 const testAccInstanceConfigAssociatePublicIPAndPrivateIP = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigAssociatePublicIPAndPrivateIP"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1852,13 +1872,14 @@ resource "aws_eip" "foo_eip" {
 }
 `
 
-const testAccInstanceConfigKeyPair = `
+func testAccInstanceConfigKeyPair(keyPairName string) string {
+	return fmt.Sprintf(`
 provider "aws" {
 	region = "us-east-1"
 }
 
 resource "aws_key_pair" "debugging" {
-	key_name = "tmp-key"
+	key_name = "%s"
 	public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD3F6tyPEFEzV0LX3X8BsXdMsQz1x2cEikKDEY0aIj41qgxMCP/iteneqXSIFZBp5vizPvaoIR3Um9xK7PGoW8giupGn+EPuxIA4cDM4vzOqOkiMPhz5XK0whEjkVzTo4+S0puvDZuwIsdiW9mxhJc7tgBNL0cYlWSYVkz4G/fslNfRPW5mYAM49f4fhtxPb5ok4Q2Lg9dPKVHO/Bgeu5woMc7RY0p1ej6D4CKFE6lymSDJpW0YHX/wqE9+cfEauh7xZcG0q9t2ta6F6fmX0agvpFyZo8aFbXeUBr7osSCJNgvavWbM/06niWrOvYX2xwWdhXmXSrbX8ZbabVohBK41 phodgson@thoughtworks.com"
 }
 
@@ -1870,11 +1891,15 @@ resource "aws_instance" "foo" {
 		Name = "testAccInstanceConfigKeyPair_TestAMI"
 	}
 }
-`
+`, keyPairName)
+}
 
 const testAccInstanceConfigRootBlockDeviceMismatch = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigRootBlockDeviceMismatch"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1896,6 +1921,9 @@ resource "aws_instance" "foo" {
 const testAccInstanceConfigForceNewAndTagsDrift = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigForceNewAndTagsDrift"
+	}
 }
 
 resource "aws_subnet" "foo" {
@@ -1913,6 +1941,9 @@ resource "aws_instance" "foo" {
 const testAccInstanceConfigForceNewAndTagsDrift_Update = `
 resource "aws_vpc" "foo" {
 	cidr_block = "10.1.0.0/16"
+	tags {
+		Name = "testAccInstanceConfigForceNewAndTagsDrift_Update"
+	}
 }
 
 resource "aws_subnet" "foo" {
