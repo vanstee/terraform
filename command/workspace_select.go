@@ -34,7 +34,7 @@ func (c *WorkspaceSelectCommand) Run(args []string) int {
 		return 1
 	}
 
-	current, isOverridden := c.EnvOverridden()
+	current, isOverridden := c.WorkspaceOverridden()
 	if isOverridden {
 		c.Ui.Error(envIsOverriddenSelectError)
 		return 1
@@ -48,7 +48,7 @@ func (c *WorkspaceSelectCommand) Run(args []string) int {
 	}
 
 	name := args[0]
-	if !validEnvName(name) {
+	if !validWorkspaceName(name) {
 		c.Ui.Error(fmt.Sprintf(envInvalidName, name))
 		return 1
 	}
@@ -77,7 +77,7 @@ func (c *WorkspaceSelectCommand) Run(args []string) int {
 		return 1
 	}
 
-	err = c.SetEnv(name)
+	err = c.SetWorkspace(name)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1

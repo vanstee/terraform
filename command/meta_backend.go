@@ -170,7 +170,7 @@ func (m *Meta) Operation() *backend.Operation {
 		PlanOutBackend:   m.backendState,
 		Targets:          m.targets,
 		UIIn:             m.UIInput(),
-		Environment:      m.Env(),
+		Environment:      m.Workspace(),
 		LockState:        m.stateLock,
 		StateLockTimeout: m.stateLockTimeout,
 	}
@@ -611,7 +611,7 @@ func (m *Meta) backendFromPlan(opts *BackendOpts) (backend.Backend, error) {
 		return nil, err
 	}
 
-	env := m.Env()
+	env := m.Workspace()
 
 	// Get the state so we can determine the effect of using this plan
 	realMgr, err := b.State(env)
@@ -1006,7 +1006,7 @@ func (m *Meta) backend_C_r_s(
 		return nil, fmt.Errorf(errBackendLocalRead, err)
 	}
 
-	env := m.Env()
+	env := m.Workspace()
 
 	localState, err := localB.State(env)
 	if err != nil {

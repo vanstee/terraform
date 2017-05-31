@@ -42,7 +42,7 @@ func (c *WorkspaceListCommand) Run(args []string) int {
 		return 1
 	}
 
-	env, isOverridden := c.EnvOverridden()
+	env, isOverridden := c.WorkspaceOverridden()
 
 	var out bytes.Buffer
 	for _, s := range states {
